@@ -9,7 +9,7 @@ import (
 	"github.com/pyrousnet/mattermost-golang-bot/commands"
 )
 
-type HandlerFunc func(event *model.WebSocketEvent) string
+type HandlerFunc func(event *model.WebSocketEvent) (string, string)
 
 type Handler struct {
 	command string
@@ -38,17 +38,32 @@ func HandleMsgFromChannel(event *model.WebSocketEvent, configuration Configurati
 
 	if matched, _ := regexp.MatchString(`^!(.*)`, post.Message); matched {
 		var messageToSend string = ""
+		var respType  int = commands.Say
 
 		commandType := reflect.TypeOf(&commands.Command{})
 		commandVal := reflect.ValueOf(&commands.Command{})
 
 		for i := 0; i < commandType.NumMethod(); i++ {
 			method := commandType.Method(i)
-			messageToSend = method.Func.Call([]reflect.Value{commandVal, reflect.ValueOf(event)})[0].Interface().(string)
+			returns := method.Func.Call([]reflect.Value{commandVal, reflect.ValueOf(event)})
+			respType = returns[0].Interface().(int)
+			messageToSend = returns[1].Interface().(string)
+			if messageToSend != "" {
+				break
+			}
 		}
 
+		println("Received type: %d", respType)
+		println("Received message: " + messageToSend)
 		if messageToSend != "" {
-			SendMsgToChannel(messageToSend, channelId, post)
-		}
+			switch respType {
+				case commands.Reply:
+					SendMsgToChannel(messageToSend, channelId, post)
+				case commands.Say, commands.Emote:
+						SendCmdToChannel(messageToSend, channelId, post)
+                default:
+                    SendMsgToChannel("Invalid command", channelId, post)
+            }
+        }
 	}
 }
